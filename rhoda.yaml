@@ -1,0 +1,64 @@
+- name: "Install rhoda"
+  hosts: "{{ my_hosts }}"
+  gather_facts: no
+  tasks:
+    - name: Create a rhoda namespace
+      k8s:
+        name: openshift-dbaas-operator
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create CatalogSource
+      k8s:
+        state: present
+        resource_definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: CatalogSource
+          metadata:
+            name: dbaas-operator
+            namespace: openshift-marketplace
+          spec:
+            sourceType: grpc
+            image: quay.io/osd-addons/dbaas-operator-index@sha256:6325f547b394b1d6f7a528ab3c01bb8f9052762acc245fd453378f5a47830923
+            displayName: DBaaS Operator
+
+    - name: Create Subscription
+      k8s:
+        state: present
+        resource_definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            labels:
+              operators.coreos.com/dbaas-operator.openshift-dbaas-operator: ""
+            name: dbaas-operator
+            namespace: openshift-dbaas-operator
+          spec:
+            channel: alpha
+            installPlanApproval: Automatic
+            name: dbaas-operator
+            source: dbaas-operator
+            sourceNamespace: openshift-marketplace
+            startingCSV: dbaas-operator.v0.1.4
+
+    - name: Create Operator group
+      k8s:
+        state: present
+        resource_definition:
+          apiVersion: operators.coreos.com/v1
+          kind: OperatorGroup
+          metadata:
+            name: dbaas-operator
+            namespace: openshift-dbaas-operator
+
+    - name: Check Catalog Source Readyness
+      k8s:
+        api_version: operators.coreos.com/v1alpha1
+        kind: CatalogSource
+        name: dbaas-operator
+        namespace: openshift-marketplace
+      register: dbaas_state
+      retries: 20
+      delay: 30
+      until: dbaas_state.result.status.connectionState.lastObservedState == "READY"
